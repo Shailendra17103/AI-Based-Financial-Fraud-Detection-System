@@ -34,13 +34,12 @@ This project uses XGBoost, engineered features, and a Streamlit web app to score
 ## 📁 Project Structure
 
 AI-Based-Financial-Fraud-Detection-System/
-│
-├── fraud_xgb_model.pkl # Trained XGBoost model
-├── fraud_scaler.pkl # StandardScaler for amount_log
-├── fraud_threshold.txt # Best threshold for fraud classification
-├── streamlit_app.py # Streamlit web application
-├── test_sample.csv # Sample input data
-└── README.md # Documentation
+├── fraud_xgb_model.pkl       # Trained XGBoost model
+├── fraud_scaler.pkl          # StandardScaler for amount_log
+├── fraud_threshold.txt       # Optimal probability threshold
+├── streamlit_app.py          # Streamlit dashboard
+├── test_sample.csv           # Example input file
+└── README.md                 # Project documentation
 
 
 ---

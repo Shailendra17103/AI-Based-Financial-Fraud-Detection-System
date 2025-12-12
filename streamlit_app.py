@@ -16,11 +16,13 @@ from sklearn.metrics import (
 # ---------------------------------------------------------------------
 model = joblib.load("fraud_xgb_model.pkl")
 
-# FIX: Add missing attribute for older models
+# FIX: Add missing attributes for older XGBoost models to avoid crashes
 setattr(model, "use_label_encoder", False)
+setattr(model, "gpu_id", None)
+setattr(model, "n_gpus", 0)
+setattr(model, "predictor", "cpu_predictor")
 
 scaler = joblib.load("fraud_scaler.pkl")
-
 
 # Optimized threshold (F1-maximizing)
 threshold = 0.8676844
@@ -45,7 +47,6 @@ def preprocess(df):
     if "amount_log" in df.columns:
         df["amount_log_scaled"] = scaler.transform(df[["amount_log"]])
     else:
-        # fallback: create small constant if amount_log absent (avoid crash)
         df["amount_log"] = 0.0
         df["amount_log_scaled"] = scaler.transform(df[["amount_log"]])
 
@@ -84,10 +85,8 @@ if page == "Fraud Prediction":
         st.subheader("Preview (first 5 rows)")
         st.write(df.head())
 
-        # Preprocess (safe)
         df_prep = preprocess(df)
 
-        # Validate features present
         missing = [c for c in MODEL_FEATURES if c not in df_prep.columns]
         if missing:
             st.error(f"Missing required features for prediction: {missing}")
@@ -118,10 +117,9 @@ elif page == "Visual Analytics":
         df = pd.read_csv(uploaded_file)
         df = preprocess(df)
 
-        # Ensure Class exists
         if "Class" not in df.columns:
             st.warning("File does not contain 'Class' column — some visualizations require labels.")
-        # Fraud count pie
+
         st.subheader("Fraud Count Overview")
         if "Class" in df.columns:
             counts = df["Class"].value_counts().sort_index()
@@ -130,32 +128,24 @@ elif page == "Visual Analytics":
             counts.plot(kind="pie", autopct="%1.2f%%", labels=labels, ax=ax)
             ax.set_ylabel("")
             st.pyplot(fig)
-        else:
-            st.info("Upload file with 'Class' column to see class distribution.")
 
-        # Fraud rate by hour (line)
+        # Hour-based fraud
         if "hour" in df.columns and "Class" in df.columns:
             st.subheader("Fraud Rate by Hour (line)")
             fig, ax = plt.subplots(figsize=(10, 3))
             hourly = df.groupby("hour")["Class"].mean()
             hourly.plot(kind="line", marker="o", ax=ax)
-            ax.set_xlabel("Hour of day")
-            ax.set_ylabel("Fraud rate")
             ax.grid(True)
             st.pyplot(fig)
 
-        # Fraud rate by day (line)
         if "day" in df.columns and "Class" in df.columns:
             st.subheader("Fraud Rate by Day (line)")
             fig, ax = plt.subplots(figsize=(10, 3))
             daily = df.groupby("day")["Class"].mean()
             daily.plot(kind="line", marker="o", ax=ax)
-            ax.set_xlabel("Day")
-            ax.set_ylabel("Fraud rate")
             ax.grid(True)
             st.pyplot(fig)
 
-        # Heatmap: hour vs day
         if "hour" in df.columns and "day" in df.columns and "Class" in df.columns:
             st.subheader("Fraud Heatmap: Day × Hour")
             heatmap_data = df.pivot_table(values="Class", index="day", columns="hour", aggfunc="mean")
@@ -163,56 +153,48 @@ elif page == "Visual Analytics":
             sns.heatmap(heatmap_data, cmap="Reds", ax=ax)
             st.pyplot(fig)
 
-        # Amount histogram
-        if "Amount" in df.columns:
-            st.subheader("Transaction Amount Distribution (histogram)")
-            fig, ax = plt.subplots(figsize=(10, 3))
-            df["Amount"].hist(bins=60, ax=ax)
-            ax.set_xlabel("Amount")
-            st.pyplot(fig)
+        st.subheader("Transaction Amount Distribution")
+        fig, ax = plt.subplots(figsize=(10, 3))
+        df["Amount"].hist(bins=60, ax=ax)
+        st.pyplot(fig)
 
-        # KDE overlay (fraud vs non-fraud)
-        if "Class" in df.columns and "Amount" in df.columns:
+        if "Class" in df.columns:
             st.subheader("Amount Distribution: Fraud vs Non-Fraud (KDE)")
             fig, ax = plt.subplots(figsize=(10, 4))
-            sns.kdeplot(df[df["Class"] == 0]["Amount"], label="Non-Fraud", shade=True, ax=ax)
+            sns.kdeplot(df[df["Class"] == 0]["Amount"], label="Non-Fraud", fill=True, ax=ax)
             if df["Class"].sum() > 0:
-                sns.kdeplot(df[df["Class"] == 1]["Amount"], label="Fraud", shade=True, ax=ax)
-            ax.set_xlabel("Amount")
+                sns.kdeplot(df[df["Class"] == 1]["Amount"], label="Fraud", fill=True, ax=ax)
             ax.legend()
             st.pyplot(fig)
 
-        # Boxplot for amounts
-        if "Amount" in df.columns:
-            st.subheader("Amount Boxplot (outliers)")
-            fig, ax = plt.subplots(figsize=(8, 3))
-            sns.boxplot(x=df["Amount"], ax=ax)
-            st.pyplot(fig)
+        st.subheader("Amount Boxplot")
+        fig, ax = plt.subplots(figsize=(8, 3))
+        sns.boxplot(x=df["Amount"], ax=ax)
+        st.pyplot(fig)
 
-        # Correlation heatmap (selected)
-        st.subheader("Correlation Heatmap (selected numeric features)")
+        st.subheader("Correlation Heatmap")
         corr_cols = [c for c in ["Amount","hour","day","amount_log","amount_log_scaled","Class"] if c in df.columns]
         if len(corr_cols) >= 2:
             fig, ax = plt.subplots(figsize=(8, 6))
             sns.heatmap(df[corr_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
             st.pyplot(fig)
         else:
-            st.info("Not enough numeric columns for correlation heatmap.")
+            st.info("Not enough numeric columns for heatmap")
 
 # ---------------------------------------------------------------------
 # PAGE: MODEL EXPLAINABILITY
 # ---------------------------------------------------------------------
 elif page == "Model Explainability":
     st.header("🔎 Model Explainability (Feature Importance, Permutation, PDP)")
-    st.write("Stable explainability methods. SHAP is intentionally disabled (model compatibility).")
+    st.write("SHAP disabled for compatibility.")
 
-    # Feature importance from XGBoost (gain)
-    st.subheader("Feature Importance — XGBoost (Gain)")
+    st.subheader("XGBoost Feature Importance (Gain)")
     booster = model.get_booster()
     try:
         importance_dict = booster.get_score(importance_type='gain')
-    except Exception:
+    except:
         importance_dict = {}
+
     if importance_dict:
         importance_df = pd.DataFrame({
             "feature": list(importance_dict.keys()),
@@ -222,35 +204,29 @@ elif page == "Model Explainability":
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.barh(importance_df["feature"], importance_df["importance"])
         ax.invert_yaxis()
-        ax.set_xlabel("Gain")
         st.pyplot(fig)
     else:
-        st.info("Could not extract feature importance from model.")
+        st.info("Could not extract importance")
 
-    # Permutation importance (model-agnostic)
-    st.subheader("Permutation Importance (Upload sample 100–500 rows)")
-    perm_file = st.file_uploader("Upload SMALL CSV for permutation importance", type=["csv"], key="perm_imp")
-    if perm_file is not None:
+    st.subheader("Permutation Importance (Requires labeled CSV)")
+    perm_file = st.file_uploader("Upload CSV", type=["csv"], key="perm_imp")
+
+    if perm_file:
         df_local = pd.read_csv(perm_file)
         df_local = preprocess(df_local)
 
         missing = [c for c in MODEL_FEATURES if c not in df_local.columns]
         if missing:
-            st.error(f"Missing columns for permutation importance: {missing}")
+            st.error(f"Missing: {missing}")
         else:
             X_local = df_local[MODEL_FEATURES]
-            if "Class" in df_local.columns:
+            if "Class" not in df_local.columns:
+                st.error("Permutation importance requires Class column")
+            else:
                 y_local = df_local["Class"]
-            else:
-                y_local = None
-                st.warning("No 'Class' column provided — permutation importance will use unsupervised proxy (not recommended).")
+                st.info("Computing permutation importance...")
+                result = permutation_importance(model, X_local, y_local, n_repeats=10, random_state=0)
 
-            st.info("Computing permutation importance (this may take a few seconds)...")
-            # If y_local is None, permutation_importance requires y; skip then
-            if y_local is None:
-                st.error("Permutation importance requires a labeled file (with Class).")
-            else:
-                result = permutation_importance(model, X_local, y_local, n_repeats=10, random_state=0, n_jobs=1)
                 perm_df = pd.DataFrame({"feature": MODEL_FEATURES, "importance": result.importances_mean})
                 perm_df = perm_df.sort_values("importance", ascending=False)
 
@@ -259,15 +235,15 @@ elif page == "Model Explainability":
                 ax.invert_yaxis()
                 st.pyplot(fig)
 
-    # Partial dependence plots
     st.subheader("Partial Dependence Plot (PDP)")
-    pdp_file = st.file_uploader("Upload CSV for PDP (300 rows suggested)", type=["csv"], key="pdp_file")
-    if pdp_file is not None:
+    pdp_file = st.file_uploader("Upload CSV for PDP", type=["csv"])
+
+    if pdp_file:
         df_pdp = pd.read_csv(pdp_file)
         df_pdp = preprocess(df_pdp)
 
-        # choose feature to plot
-        sel_feature = st.selectbox("Select feature for PDP", [f for f in MODEL_FEATURES if f in df_pdp.columns])
+        sel_feature = st.selectbox("Select feature", [f for f in MODEL_FEATURES if f in df_pdp.columns])
+
         if sel_feature:
             X_small = df_pdp[[c for c in MODEL_FEATURES if c in df_pdp.columns]].sample(min(300, len(df_pdp)), random_state=1)
             fig, ax = plt.subplots(figsize=(8, 4))
@@ -282,19 +258,18 @@ elif page == "Model Explainability":
 # ---------------------------------------------------------------------
 elif page == "Model Performance":
     st.header("📈 Model Performance Dashboard")
-    st.write("Upload a labeled CSV (with 'Class' column) to evaluate the model on your data.")
+    perf_file = st.file_uploader("Upload labeled CSV", type=["csv"], key="perf")
 
-    perf_file = st.file_uploader("Upload evaluation CSV", type=["csv"], key="perf")
-
-    if perf_file is not None:
+    if perf_file:
         df_eval = pd.read_csv(perf_file)
         if "Class" not in df_eval.columns:
-            st.error("Evaluation file must contain 'Class' column.")
+            st.error("Missing Class column")
         else:
             df_eval = preprocess(df_eval)
             missing = [c for c in MODEL_FEATURES if c not in df_eval.columns]
+
             if missing:
-                st.error(f"Missing features in evaluation file: {missing}")
+                st.error(f"Missing: {missing}")
             else:
                 X = df_eval[MODEL_FEATURES]
                 y = df_eval["Class"]
@@ -302,57 +277,45 @@ elif page == "Model Performance":
                 prob = model.predict_proba(X)[:, 1]
                 pred = (prob >= threshold).astype(int)
 
-                # Confusion matrix
-                st.subheader("🔳 Confusion Matrix")
+                st.subheader("Confusion Matrix")
                 cm = confusion_matrix(y, pred)
                 fig, ax = plt.subplots(figsize=(4, 3))
                 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-                ax.set_xlabel("Predicted")
-                ax.set_ylabel("Actual")
                 st.pyplot(fig)
 
-                # ROC curve & AUC
-                st.subheader("📉 ROC Curve")
+                st.subheader("ROC Curve")
                 fpr, tpr, _ = roc_curve(y, prob)
                 auc_score = auc(fpr, tpr)
                 fig, ax = plt.subplots(figsize=(6, 4))
                 ax.plot(fpr, tpr, label=f"AUC = {auc_score:.4f}")
                 ax.plot([0, 1], [0, 1], "k--")
-                ax.set_xlabel("False Positive Rate")
-                ax.set_ylabel("True Positive Rate")
                 ax.legend()
                 st.pyplot(fig)
 
-                # Precision-Recall
-                st.subheader("📈 Precision–Recall Curve")
+                st.subheader("Precision–Recall Curve")
                 precision, recall, _ = precision_recall_curve(y, prob)
                 fig, ax = plt.subplots(figsize=(6, 4))
                 ax.plot(recall, precision)
-                ax.set_xlabel("Recall")
-                ax.set_ylabel("Precision")
                 st.pyplot(fig)
 
-                # Threshold tuning (precision / recall / f1 vs threshold)
-                st.subheader("📊 Threshold tuning")
-                thresholds = np.linspace(0.0, 1.0, 200)
+                st.subheader("Threshold Tuning")
+                thresholds = np.linspace(0, 1, 200)
                 precs, recs, f1s = [], [], []
                 for t in thresholds:
                     p = (prob >= t).astype(int)
                     precs.append(precision_score(y, p, zero_division=0))
                     recs.append(recall_score(y, p))
                     f1s.append(f1_score(y, p))
+
                 fig, ax = plt.subplots(figsize=(7, 4))
                 ax.plot(thresholds, precs, label="Precision")
                 ax.plot(thresholds, recs, label="Recall")
                 ax.plot(thresholds, f1s, label="F1")
                 ax.axvline(threshold, color="red", linestyle="--", label=f"Selected threshold = {threshold}")
-                ax.set_xlabel("Threshold")
-                ax.set_ylabel("Score")
                 ax.legend()
                 st.pyplot(fig)
 
-                # Classification report
-                st.subheader("📄 Classification Report (selected threshold)")
+                st.subheader("Classification Report")
                 st.text(classification_report(y, pred, zero_division=0))
 
 # ---------------------------------------------------------------------
@@ -371,5 +334,3 @@ elif page == "About Project":
 
     Developer: **Shailendra Bhushan Rai**
     """)
-
-# End of file

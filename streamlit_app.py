@@ -15,7 +15,12 @@ from sklearn.metrics import (
 # Load model + artifacts
 # ---------------------------------------------------------------------
 model = joblib.load("fraud_xgb_model.pkl")
+
+# FIX: Add missing attribute for older models
+setattr(model, "use_label_encoder", False)
+
 scaler = joblib.load("fraud_scaler.pkl")
+
 
 # Optimized threshold (F1-maximizing)
 threshold = 0.8676844

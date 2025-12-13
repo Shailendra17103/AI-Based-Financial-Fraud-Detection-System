@@ -156,21 +156,6 @@ This provides the best trade-off between precision and recall for real-world fra
 
 ---
 
-## 🔍 Explainability Strategy
-
-Due to cross-version compatibility issues with SHAP and serialized XGBoost models:
-
-❌ SHAP disabled (intentionally)  
-✅ Used robust alternatives: 
-
-- Gain-based feature importance
-- Permutation importance
-- Manual PDP (production-safe)
-
-This ensures no runtime crashes on deployment.
-
----
-
 ## ☁️ Deployment
 
 - **Platform**: Streamlit Cloud
@@ -185,9 +170,6 @@ This ensures no runtime crashes on deployment.
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
-
----
-
 ## 📁 Project Structure
 
 ```
@@ -197,18 +179,6 @@ streamlit run streamlit_app.py
 ├── requirements. txt
 ├── README.md
 ```
-
----
-
-## ⚠️ Known Warnings (Handled Safely)
-
-- XGBoost version mismatch warnings
-- Scikit-learn unpickle version warnings
-
-These do not affect predictions and are safely handled in code.
-
----
-
 ## 👨‍💻 Author
 
 **Shailendra Bhushan Rai**  
